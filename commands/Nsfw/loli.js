@@ -1,0 +1,24 @@
+const Discord = require('discord.js');
+const config = require('/app/config.json')
+var Weez = require("weez");
+var weez = new Weez.WeezAPI(config.weeztoken);
+
+const DeletedCommand = require('../DeletedCommand.js');
+
+class Command extends DeletedCommand {
+  constructor() {
+    super("loli");
+  }
+
+  run(client, msg, args) {
+    let img = await weez.randomLoli();
+    if(!msg.channel.nsfw)return msg.channel.send("Este canal no esta marcado como nsfw.");
+    let emb = new Discord.RichEmbed()
+    .setColor(`RANDOM`)
+    .setFooter("Pedido por: "+msg.author.tag)
+    .setImage(img)
+    msg.channel.send(emb)
+  }
+}
+
+module.exports = Command;
