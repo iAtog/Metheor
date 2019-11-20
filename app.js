@@ -1,39 +1,36 @@
 require(__dirname+'/object/uptime.js').extract();
 
 const Discord = require("discord.js");
-const client = new Discord.Client({ disableEveryone: true });
+const client = new Discord.Client();
 const CONFIG = require(__dirname + "/config.json");
 const Enmap = require("enmap");
 const xp = require(__dirname+'/database/level.json');
 const fs = require('fs');
 
-client.login(process.env.DISCORDTOKEN);
-
+console.log("----------------------")
+client.login(CONFIG.tokens.discordapptoken).catch(console.error);
+console.log("----------------------");
 client.commands = new Discord.Collection();
 
-fs.readdir("./commands", (err, files) => {
-    if(err) console.error(err);
-
-    let jsfiles = files.filter(f => f.split(".").pop() === "js");
-    if(jsfiles.length <= 0) { 
-        console.log("[INFO] No se encontraron comandos para cargar");
-        return;
-    }
-
-    console.log(`[INFO] Cargando ${jsfiles.length} comandos!`); 
-
-    jsfiles.forEach((f, i) => {
-        let props = require(`./commands/${f}`);
-        console.log(`[INFO] ${f} cargado!`); 
-        client.commands.set(props.help.name, props);
-    });
-});
-
-
-
-client.setScore = function(value) {
-  
+function setupCommands(){
+  fs.readdir(__dirname + "/commands", (err, categories) => {
+      if(err) return console.error(err);
+      categories.forEach(category => {
+          if(category !== 'DeletedCommand.js') {
+            fs.readdir(__dirname + "/commands/" + category, (err, commands) => {
+              if(err) return console.error(err);
+              commands.forEach(command => {
+                  if(!(command.split(".").pop() == "js")) return;
+                  let commandName = command.substring(0, command.length - 3);
+                  client.commands.set(commandName, require(`${__dirname}/commands/${category}/${command}`));
+                  console.log(`[INFO] Se registro el comando: ${category}/${commandName}`);
+              });
+            });
+          }
+      });
+  });   
 }
+
 
 client.settings = new Enmap({
   name: "settings",
@@ -49,13 +46,16 @@ const defaultSettings = {
   logChannel: "indefinido",
   modRole: "Moderator",
   adminRole: "Administrator"
-};
+}; 
 
 module.exports.defaultSettings = defaultSettings;
 
 client.on("ready", () => {
+  console.log("Conectado con Discord!");
   const ready = require(__dirname+'/object/ready.js');
+  setupCommands();
   ready.extract(client);
+  
 });
 
 client.on("guildCreate", function(guild) {
@@ -94,57 +94,45 @@ client.on("guildDelete", guild => {
 
 
 
-client.on("error", console.error);
+client.on("error", (error) => {
+  console.log(error);
+});
 
 
 
-client.on("message", async function(msg) {
-  if (!msg.guild || msg.author.bot) return;
+client.on("message", async (msg) => {
+  try{
+    if (!msg.guild || msg.author.bot) return;
   const guildConf = client.settings.ensure(msg.guild.id, defaultSettings);
   
   const lvl = require(__dirname+'/object/levelsystem.js');
   lvl.export(client, msg);
   
   let prefix = guildConf.prefix;
-  let messageArray = msg.content.split(" ");
-    let command = messageArray[0];
-    let args = messageArray.slice(1);
   
-  if(msg.content.startsWith("mth!clearall")) {
-    msg.guild.channels.forEach(ch => {
-      ch.delete();
-    });
-    return;
-  }
+  let args = msg.content.slice(guildConf.prefix.length).trim().split(/ +/g);
+  const command = msg.content.split(' ')[0].slice(prefix.length);
+  
   
   if (msg.content === "<@"+client.user.id+">" || msg.content.startsWith(client.user.username) || msg.content.startsWith("@Metheor") && msg.content.indexOf(guildConf.prefix) !== 0){
-      let embe = new Discord.RichEmbed()
+      let embed = new Discord.RichEmbed()
       .setColor('RANDOM')
       .setDescription("Mi prefix actual es: `"+guildConf.prefix+"`")
-      msg.channel.send(embe)
+      msg.channel.send(embed)
       return;
     }
-  if(!msg.content.startsWith(guildConf.prefix))return;
+  if(!msg.content.startsWith(prefix))return;
+  if(!client.commands.has(command)) return msg.channel.send("No se ha encontrado el comando: __**"+command+"**__");
+  let Command = client.commands.get(command);
+  let cmd = new Command();
+    
+  cmd.proccessCommand(client, msg, args);
   
-  let cmd = client.commands.get(command.slice(prefix.length));
-  
-  if(cmd) cmd.run(client, msg, args);
-  
-  console.log(msg.author.username+" Ejecuto el comando: "+command)
+  console.log(msg.author.username+" Ejecuto el comando: "+command);
+  }catch(err) {
+    console.log(err);
+  }
 });
 
-client.on("messageDelete", msg => {
-  if(msg.author.bot || !msg.guild)return;
-  
-  let snipes = require(__dirname+'/database/snipe.json');
-  snipes[msg.channel.id] = [msg, msg.author.tag]
-  
-  
-  let fileName = __dirname+"/database/snipe.json";
-  
-  fs.writeFile(fileName, (JSON.stringify(snipes, null, 2)), (error) => {
-    if(error)return console.log(error);
-  });
-  
-});
+
 
